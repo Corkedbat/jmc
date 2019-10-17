@@ -498,6 +498,13 @@
 					<column id="eventThread" width="120" />
 					<column id="endOfFile" width="80" />
 				</eventList>
+				<percentileTable sortColumn="DurationPercentileTable.percentile">
+					<column id="DurationPercentileTable.percentile" sortAscending="true" width="80" />
+					<column id="percentileReadTime" width="100" />
+					<column id="percentileReadCount" width="100" />
+					<column id="percentileWriteTime" width="100" />
+					<column id="percentileWriteCount" width="100" />
+				</percentileTable>
 			</state>
 		</page>
 		<page factory="org.openjdk.jmc.flightrecorder.ui.socketio" id="org.openjdk.jmc.flightrecorder.ui.socketio">
@@ -539,6 +546,13 @@
 					<column id="endOfStream" width="80" />
 					<column id="timeout" width="50" />
 				</eventList>
+				<percentileTable sortColumn="DurationPercentileTable.percentile">
+					<column id="DurationPercentileTable.percentile" sortAscending="true" width="80" />
+					<column id="percentileReadTime" width="100" />
+					<column id="percentileReadCount" width="100" />
+					<column id="percentileWriteTime" width="100" />
+					<column id="percentileWriteCount" width="100" />
+				</percentileTable>
 			</state>
 		</page>
 		<page factory="org.openjdk.jmc.flightrecorder.ui.methodprofiling" id="org.openjdk.jmc.flightrecorder.ui.methodprofiling">
@@ -590,6 +604,13 @@
 				<column id="origin:text" width="110" />
 			</jvmFlags>
 			<jvmFlagsFilter showFilter="false" showSearch="true" />
+			<jvmFlagsLog sortColumn="startTime:timestamp" sortAscending="true">
+				<column hidden="false" id="startTime:timestamp" width="180" />
+				<column hidden="false" id="name:text" width="200" />
+				<column hidden="false" id="oldValue" width="90" />
+				<column hidden="false" id="newValue" width="90" />
+				<column hidden="false" id="origin:text" width="110" />
+			</jvmFlagsLog>
 		</state>
 		<page factory="org.openjdk.jmc.flightrecorder.ui.garbagecollections"
 			id="org.openjdk.jmc.flightrecorder.ui.garbagecollections">
@@ -771,8 +792,8 @@
 		<page factory="org.openjdk.jmc.flightrecorder.ui.environmentvariables"
 			id="org.openjdk.jmc.flightrecorder.ui.environmentvariables">
 			<state>
-				<table>
-					<column id="key:text" width="200">
+				<table sortColumn="key:text">
+					<column id="key:text" width="200" sortAscending="true">
 					</column>
 					<column id="value:text" width="600">
 					</column>
@@ -785,9 +806,21 @@
 		<page factory="org.openjdk.jmc.flightrecorder.ui.systemproperties"
 			id="org.openjdk.jmc.flightrecorder.ui.systemproperties">
 			<state>
-				<table>
-					<column id="key:text" width="230" />
+				<table sortColumn="key:text">
+					<column id="key:text" width="230" sortAscending="true" />
 					<column id="value:text" width="550" />
+				</table>
+				<filter showFilter="false" showSearch="true" />
+			</state>
+		</page>
+		<page factory="org.openjdk.jmc.flightrecorder.ui.nativelibrary"
+			id="org.openjdk.jmc.flightrecorder.ui.nativelibrary">
+			<state>
+				<table sortColumn="name:text">
+					<column id="name:text" sortAscending="true" width="420" />
+					<column id="baseAddress:address" width="100" />
+					<column id="topAddress:address" width="100" />
+					<column id="Count" width="70" hidden="true" />
 				</table>
 				<filter showFilter="false" showSearch="true" />
 			</state>

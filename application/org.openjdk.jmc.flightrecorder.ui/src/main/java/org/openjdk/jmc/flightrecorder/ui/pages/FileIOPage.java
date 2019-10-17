@@ -74,6 +74,8 @@ import org.openjdk.jmc.flightrecorder.ui.ItemCollectionToolkit;
 import org.openjdk.jmc.flightrecorder.ui.StreamModel;
 import org.openjdk.jmc.flightrecorder.ui.common.AbstractDataPage;
 import org.openjdk.jmc.flightrecorder.ui.common.DataPageToolkit;
+import org.openjdk.jmc.flightrecorder.ui.common.DurationPercentileTable;
+import org.openjdk.jmc.flightrecorder.ui.common.DurationPercentileTable.DurationPercentileTableBuilder;
 import org.openjdk.jmc.flightrecorder.ui.common.FilterComponent;
 import org.openjdk.jmc.flightrecorder.ui.common.FlavorSelector;
 import org.openjdk.jmc.flightrecorder.ui.common.FlavorSelector.FlavorSelectorState;
@@ -94,6 +96,8 @@ import org.openjdk.jmc.ui.column.ColumnMenusFactory;
 import org.openjdk.jmc.ui.column.TableSettings;
 import org.openjdk.jmc.ui.column.TableSettings.ColumnSettings;
 import org.openjdk.jmc.ui.handlers.MCContextMenuManager;
+import org.openjdk.jmc.ui.layout.SimpleLayout;
+import org.openjdk.jmc.ui.layout.SimpleLayoutData;
 import org.openjdk.jmc.ui.misc.ChartCanvas;
 import org.openjdk.jmc.ui.misc.PersistableSashForm;
 
@@ -136,9 +140,14 @@ public class FileIOPage extends AbstractDataPage {
 	private static final String READ_SIZE = "readSize"; //$NON-NLS-1$
 	private static final String WRITE_SIZE = "writeSize"; //$NON-NLS-1$
 	private static final String READ_EOF = "endOfFile"; //$NON-NLS-1$
+	private static final String PERCENTILE_READ_TIME = "percentileReadTime"; //$NON-NLS-1$
+	private static final String PERCENTILE_READ_COUNT = "percentileReadCount"; //$NON-NLS-1$
+	private static final String PERCENTILE_WRITE_TIME = "percentileWriteTime"; //$NON-NLS-1$
+	private static final String PERCENTILE_WRITE_COUNT = "percentileWriteCount"; //$NON-NLS-1$
 
 	private static final ItemHistogramBuilder HISTOGRAM = new ItemHistogramBuilder();
 	private static final ItemListBuilder LIST = new ItemListBuilder();
+	private static final DurationPercentileTableBuilder PERCENTILES = new DurationPercentileTableBuilder();
 
 	static {
 		HISTOGRAM.addCountColumn();
@@ -158,6 +167,11 @@ public class FileIOPage extends AbstractDataPage {
 		LIST.addColumn(JdkAttributes.IO_FILE_BYTES_WRITTEN);
 		LIST.addColumn(JfrAttributes.EVENT_THREAD);
 		LIST.addColumn(JdkAttributes.IO_FILE_READ_EOF);
+
+		PERCENTILES.addSeries(PERCENTILE_READ_TIME, Messages.FileIOPage_ROW_FILE_READ,
+				PERCENTILE_READ_COUNT, JdkAggregators.FILE_READ_COUNT.getName(), JdkTypeIDs.FILE_READ);
+		PERCENTILES.addSeries(PERCENTILE_WRITE_TIME, Messages.FileIOPage_ROW_FILE_WRITE,
+				PERCENTILE_WRITE_COUNT, JdkAggregators.FILE_WRITE_COUNT.getName(), JdkTypeIDs.FILE_WRITE);
 	}
 
 	private class IOPageUi implements IPageUI {
@@ -166,9 +180,11 @@ public class FileIOPage extends AbstractDataPage {
 		private static final String SASH_ELEMENT = "sash"; //$NON-NLS-1$
 		private static final String LIST_ELEMENT = "eventList"; //$NON-NLS-1$
 		private static final String TABLE_ELEMENT = "table"; //$NON-NLS-1$
+		private static final String PERCENTILE_TABLE_ELEMENT = "percentileTable"; //$NON-NLS-1$
 
 		private final ChartCanvas timelineCanvas;
 		private final ChartCanvas durationCanvas;
+		private final ChartCanvas sizeCanvas;
 		private XYChart timelineChart;
 		private IRange<IQuantity> timeRange;
 		private IItemCollection selectionItems;
@@ -179,6 +195,8 @@ public class FileIOPage extends AbstractDataPage {
 		private FilterComponent tableFilter;
 		private FilterComponent itemListFilter;
 		private FlavorSelector flavorSelector;
+		private DurationPercentileTable percentileTable;
+		private Composite durationParent;
 
 		IOPageUi(Composite parent, FormToolkit toolkit, IPageContainer pageContainer, IState state) {
 			this.pageContainer = pageContainer;
@@ -213,14 +231,34 @@ public class FileIOPage extends AbstractDataPage {
 			DataPageToolkit.createChartTimestampTooltip(timelineCanvas);
 
 			CTabItem t2 = new CTabItem(tabFolder, SWT.NONE);
+			durationParent = toolkit.createComposite(tabFolder);
+			durationParent.setLayout(new SimpleLayout());
 			t2.setToolTipText(Messages.IO_PAGE_DURATIONS_DESCRIPTION);
-			durationCanvas = new ChartCanvas(tabFolder);
-			t2.setText(Messages.PAGES_DURATIONS);
-			t2.setControl(durationCanvas);
+			durationCanvas = new ChartCanvas(durationParent);
+			durationCanvas.setLayoutData(new SimpleLayoutData(3.5f));
 			DataPageToolkit.createChartTooltip(durationCanvas);
 
+			percentileTable = PERCENTILES.build(durationParent,
+					TableSettings.forState(state.getChild(PERCENTILE_TABLE_ELEMENT)));
+			percentileTable.getManager().getViewer().getControl().setLayoutData(new SimpleLayoutData(6.5f));
+			MCContextMenuManager percentileTableMm = MCContextMenuManager
+					.create(percentileTable.getManager().getViewer().getControl());
+			ColumnMenusFactory.addDefaultMenus(percentileTable.getManager(), percentileTableMm);
+			SelectionStoreActionToolkit.addSelectionStoreActions(percentileTable.getManager().getViewer(),
+					pageContainer.getSelectionStore(), percentileTable::getSelectedItems,
+					Messages.FileIOPage_PERCENTILE_SELECTION, percentileTableMm);
+			t2.setText(Messages.PAGES_DURATIONS);
+			t2.setControl(durationParent);
+
 			CTabItem t3 = new CTabItem(tabFolder, SWT.NONE);
-			t3.setToolTipText(Messages.IO_PAGE_EVENT_LOG_DESCRIPTION);
+			t3.setToolTipText(Messages.IO_PAGE_SIZE_DESCRIPTION);
+			sizeCanvas = new ChartCanvas(tabFolder);
+			t3.setText(Messages.PAGES_SIZE);
+			t3.setControl(sizeCanvas);
+			DataPageToolkit.createChartTooltip(sizeCanvas);
+
+			CTabItem t4 = new CTabItem(tabFolder, SWT.NONE);
+			t4.setToolTipText(Messages.IO_PAGE_EVENT_LOG_DESCRIPTION);
 			itemList = LIST.buildWithoutBorder(tabFolder, getTableSettings(state.getChild(LIST_ELEMENT)));
 			MCContextMenuManager itemListMm = MCContextMenuManager
 					.create(itemList.getManager().getViewer().getControl());
@@ -229,13 +267,13 @@ public class FileIOPage extends AbstractDataPage {
 					Messages.FileIOPage_LOG_SELECTION, itemListMm);
 			itemList.getManager().getViewer().addSelectionChangedListener(
 					e -> pageContainer.showSelection(ItemCollectionToolkit.build(itemList.getSelection().get())));
-			t3.setText(Messages.PAGES_EVENT_LOG);
+			t4.setText(Messages.PAGES_EVENT_LOG);
 			itemListFilter = FilterComponent.createFilterComponent(itemList, FileIOPage.this.itemListFilter,
 					getDataSource().getItems().apply(TABLE_ITEMS), pageContainer.getSelectionStore()::getSelections,
 					this::onListFilterChange);
 			itemListMm.add(itemListFilter.getShowFilterAction());
 			itemListMm.add(itemListFilter.getShowSearchAction());
-			t3.setControl(itemListFilter.getComponent());
+			t4.setControl(itemListFilter.getComponent());
 
 			tableFilter.loadState(state.getChild(FILE_IO_TABLE));
 			itemListFilter.loadState(state.getChild(FILE_IO_LIST));
@@ -256,6 +294,7 @@ public class FileIOPage extends AbstractDataPage {
 					pageContainer, this::onInputSelected, this::onShowFlavor, flavorSelectorState);
 
 			table.getManager().setSelectionState(tableSelection);
+			percentileTable.getManager().setSelectionState(percentileSelection);
 			itemList.getManager().setSelectionState(itemListSelection);
 		}
 
@@ -284,6 +323,7 @@ public class FileIOPage extends AbstractDataPage {
 			tableFilter.saveState(writableState.createChild(FILE_IO_TABLE));
 			itemList.getManager().getSettings().saveState(writableState.createChild(LIST_ELEMENT));
 			itemListFilter.saveState(writableState.createChild(FILE_IO_LIST));
+			percentileTable.getManager().getSettings().saveState(writableState.createChild(PERCENTILE_TABLE_ELEMENT));
 
 			saveToLocal();
 		}
@@ -292,6 +332,7 @@ public class FileIOPage extends AbstractDataPage {
 			tableSelection = table.getManager().getSelectionState();
 			itemListSelection = itemList.getManager().getSelectionState();
 			flavorSelectorState = flavorSelector.getFlavorSelectorState();
+			percentileSelection = percentileTable.getManager().getSelectionState();
 		}
 
 		private void onShowFlavor(Boolean show) {
@@ -323,6 +364,7 @@ public class FileIOPage extends AbstractDataPage {
 			String pathCount = pathCount(histogramSelection.getRowCount());
 			List<IXDataRenderer> timelineRows = new ArrayList<>();
 			List<IXDataRenderer> durationRows = new ArrayList<>();
+			List<IXDataRenderer> sizeRows = new ArrayList<>();
 			IItemCollection readItems = selectedItems.apply(JdkFilters.FILE_READ);
 			if (readItems.hasItems()) {
 				timelineRows.add(DataPageToolkit.buildSizeRow(Messages.FileIOPage_ROW_FILE_READ + pathCount,
@@ -331,6 +373,9 @@ public class FileIOPage extends AbstractDataPage {
 				durationRows.add(DataPageToolkit.buildDurationHistogram(Messages.FileIOPage_ROW_FILE_READ + pathCount,
 						JdkAggregators.FILE_READ_COUNT.getDescription(), readItems, JdkAggregators.FILE_READ_COUNT,
 						READ_COLOR));
+				sizeRows.add(DataPageToolkit.buildSizeHistogram(Messages.FileIOPage_ROW_FILE_READ + pathCount,
+						JdkAggregators.FILE_READ_COUNT.getDescription(), readItems, JdkAggregators.FILE_READ_COUNT,
+						READ_COLOR, JdkAttributes.IO_FILE_BYTES_READ));
 			}
 			IItemCollection writeItems = selectedItems.apply(JdkFilters.FILE_WRITE);
 			if (writeItems.hasItems()) {
@@ -340,6 +385,9 @@ public class FileIOPage extends AbstractDataPage {
 				durationRows.add(DataPageToolkit.buildDurationHistogram(Messages.FileIOPage_ROW_FILE_WRITE + pathCount,
 						JdkAggregators.FILE_WRITE_COUNT.getDescription(), writeItems, JdkAggregators.FILE_WRITE_COUNT,
 						WRITE_COLOR));
+				sizeRows.add(DataPageToolkit.buildSizeHistogram(Messages.FileIOPage_ROW_FILE_WRITE + pathCount,
+						JdkAggregators.FILE_WRITE_COUNT.getDescription(), writeItems, JdkAggregators.FILE_WRITE_COUNT,
+						WRITE_COLOR, JdkAttributes.IO_FILE_BYTES_WRITTEN));
 			}
 //			ItemRow[] pathRows = selection.getSelectedRows(FileIOPage::buildPathLane).toArray(ItemRow[]::new);
 
@@ -359,6 +407,20 @@ public class FileIOPage extends AbstractDataPage {
 			SelectionStoreActionToolkit.addSelectionStoreActions(pageContainer.getSelectionStore(), durationChart,
 					JfrAttributes.DURATION, Messages.FileIOPage_DURATION_SELECTION, durationCanvas.getContextMenu());
 			itemList.show(selectedItems);
+			percentileTable.update(selectedItems);
+
+			IXDataRenderer sizeRoot = RendererToolkit.uniformRows(sizeRows);
+			IQuantity sizeMax = selectedItems.getAggregate(JdkAggregators.FILE_READ_LARGEST);
+			// FIXME: Workaround to make max value included
+			sizeMax = sizeMax == null ? UnitLookup.BYTE.quantity(64): sizeMax.add(UnitLookup.BYTE.quantity(64));
+			XYChart sizeChart = new XYChart(UnitLookup.BYTE.quantity(0), sizeMax, sizeRoot, 180);
+			DataPageToolkit.setChart(sizeCanvas, sizeChart, JdkAttributes.IO_SIZE,
+					selection -> pageContainer.showSelection(selection));
+			sizeChart.setVisibleRange(sizeRange.getStart(), sizeRange.getEnd());
+			sizeChart.addVisibleRangeListener(range -> sizeRange = range);
+			sizeCanvas.setChart(sizeChart);
+			SelectionStoreActionToolkit.addSelectionStoreActions(pageContainer.getSelectionStore(), sizeChart,
+					JdkAttributes.IO_SIZE, Messages.FileIOPage_SIZE_SELECTION, sizeCanvas.getContextMenu());
 		}
 	}
 
@@ -384,17 +446,20 @@ public class FileIOPage extends AbstractDataPage {
 
 	private SelectionState tableSelection;
 	private SelectionState itemListSelection;
+	private SelectionState percentileSelection;
 	private IItemFilter tableFilter = null;
 	private IItemFilter itemListFilter = null;
 	private int tabFolderIndex = 0;
 	private IRange<IQuantity> timelineRange;
 	private IRange<IQuantity> durationRange;
+	private IRange<IQuantity> sizeRange;
 	public FlavorSelectorState flavorSelectorState;
 
 	public FileIOPage(IPageDefinition dpd, StreamModel items, IPageContainer editor) {
 		super(dpd, items, editor);
 		timelineRange = editor.getRecordingRange();
 		durationRange = editor.getRecordingRange();
+		sizeRange = DataPageToolkit.buildSizeRange(items.getItems(), false);
 	}
 
 //	private static ItemRow buildPathLane(Object path, Supplier<Stream<ItemStream>> pathItems) {

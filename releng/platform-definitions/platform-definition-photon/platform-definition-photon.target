@@ -37,8 +37,8 @@
             <unit id="com.sun.mail.jakarta.mail" version="1.6.3"/>
             <unit id="com.sun.activation.jakarta.activation" version="1.2.1"/>
             <unit id="javax.mail.dsn" version="1.4.0"/>
-            <unit id="org.owasp.encoder" version="1.2.1"/>
-            <unit id="org.twitter4j.core" version="4.0.6"/>
+            <unit id="org.owasp.encoder" version="1.2.2"/>
+            <unit id="org.twitter4j.core" version="4.0.7"/>
             <unit id="org.openjfx.javafx-base.mac" version="11.0.1"/>
             <unit id="org.openjfx.javafx-base.win" version="11.0.1"/>
             <unit id="org.openjfx.javafx-base.linux" version="11.0.1"/>
@@ -60,6 +60,7 @@
             <unit id="org.openjfx.javafx-web.mac" version="11.0.1"/>
             <unit id="org.openjfx.javafx-web.win" version="11.0.1"/>
             <unit id="org.openjfx.javafx-web.linux" version="11.0.1"/>
+            <unit id="org.hdrhistogram.HdrHistogram" version="2.1.11"/>
             <repository location="http://localhost:8080/site"/>
         </location>
         <location includeAllPlatforms="false" includeConfigurePhase="true" includeMode="planner" includeSource="true" type="InstallableUnit">

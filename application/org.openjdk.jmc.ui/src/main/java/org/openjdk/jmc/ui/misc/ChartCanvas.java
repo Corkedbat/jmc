@@ -77,6 +77,7 @@ public class ChartCanvas extends Canvas {
 	private int lastMouseX = -1;
 	private int lastMouseY = -1;
 	private List<Rectangle2D> highlightRects;
+	private Object hoveredItemData;
 
 	private class Selector extends MouseAdapter implements MouseMoveListener, MouseTrackListener {
 
@@ -152,6 +153,9 @@ public class ChartCanvas extends Canvas {
 
 		@Override
 		public void mouseExit(MouseEvent e) {
+			if (!getClientArea().contains(e.x, e.y)) {
+				resetHoveredItemData();
+			}
 			clearHighlightRects();
 		}
 
@@ -391,6 +395,18 @@ public class ChartCanvas extends Canvas {
 		return (int) Math.round(x / xScale);
 	}
 
+	public Object getHoveredItemData() {
+		return this.hoveredItemData;
+	}
+
+	public void setHoveredItemData(Object data) {
+		this.hoveredItemData = data;
+	}
+
+	public void resetHoveredItemData() {
+		this.hoveredItemData = null;
+	}
+
 	private void updateHighlightRects() {
 		List<Rectangle2D> newRects = new ArrayList<>();
 		infoAt(new IChartInfoVisitor.Adapter() {
@@ -419,6 +435,13 @@ public class ChartCanvas extends Canvas {
 			@Override
 			public void visit(ILane lane) {
 				// FIXME: Do we want this highlighted?
+			}
+
+			@Override
+			public void hover(Object data) {
+				if (data != null) {
+					setHoveredItemData(data);
+				}
 			}
 		}, lastMouseX, lastMouseY);
 		// Attempt to reduce flicker by avoiding unnecessary updates.

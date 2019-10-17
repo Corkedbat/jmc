@@ -22,3 +22,10 @@ workspace/
 
 # Ignore jar files
 *.jar
+
+# Useful for local m2 cache when docker building
+.m2
+
+# Ignore coverage report
+core/coverage/coverage-report
+application/coverage/coverage-report

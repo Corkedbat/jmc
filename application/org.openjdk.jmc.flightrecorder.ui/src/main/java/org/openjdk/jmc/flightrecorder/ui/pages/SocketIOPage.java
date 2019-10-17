@@ -69,6 +69,7 @@ import org.openjdk.jmc.common.item.IItemFilter;
 import org.openjdk.jmc.common.item.ItemFilters;
 import org.openjdk.jmc.common.unit.IQuantity;
 import org.openjdk.jmc.common.unit.IRange;
+import org.openjdk.jmc.common.unit.QuantitiesToolkit;
 import org.openjdk.jmc.common.unit.UnitLookup;
 import org.openjdk.jmc.common.util.ColorToolkit;
 import org.openjdk.jmc.common.util.StateToolkit;
@@ -89,6 +90,8 @@ import org.openjdk.jmc.flightrecorder.ui.StreamModel;
 import org.openjdk.jmc.flightrecorder.ui.common.AbstractDataPage;
 import org.openjdk.jmc.flightrecorder.ui.common.CompositeKeyAccessorFactory;
 import org.openjdk.jmc.flightrecorder.ui.common.DataPageToolkit;
+import org.openjdk.jmc.flightrecorder.ui.common.DurationPercentileTable;
+import org.openjdk.jmc.flightrecorder.ui.common.DurationPercentileTable.DurationPercentileTableBuilder;
 import org.openjdk.jmc.flightrecorder.ui.common.FilterComponent;
 import org.openjdk.jmc.flightrecorder.ui.common.FlavorSelector;
 import org.openjdk.jmc.flightrecorder.ui.common.FlavorSelector.FlavorSelectorState;
@@ -111,6 +114,8 @@ import org.openjdk.jmc.ui.column.TableSettings;
 import org.openjdk.jmc.ui.column.TableSettings.ColumnSettings;
 import org.openjdk.jmc.ui.handlers.ActionToolkit;
 import org.openjdk.jmc.ui.handlers.MCContextMenuManager;
+import org.openjdk.jmc.ui.layout.SimpleLayout;
+import org.openjdk.jmc.ui.layout.SimpleLayoutData;
 import org.openjdk.jmc.ui.misc.ChartCanvas;
 import org.openjdk.jmc.ui.misc.PersistableSashForm;
 
@@ -153,12 +158,18 @@ public class SocketIOPage extends AbstractDataPage {
 	private static final String WRITE_SIZE = "writeSize"; //$NON-NLS-1$
 	private static final String READ_EOS = "endOfStream"; //$NON-NLS-1$
 	private static final String IO_TIMEOUT = "timeout"; //$NON-NLS-1$
+	private static final String PERCENTILE_READ_TIME = "percentileReadTime"; //$NON-NLS-1$
+	private static final String PERCENTILE_READ_COUNT = "percentileReadCount"; //$NON-NLS-1$
+	private static final String PERCENTILE_WRITE_TIME = "percentileWriteTime"; //$NON-NLS-1$
+	private static final String PERCENTILE_WRITE_COUNT = "percentileWriteCount"; //$NON-NLS-1$
+
 	private static final IAccessorFactory<IDisplayable> HOST_AND_PORT_AF = CompositeKeyAccessorFactory.displayable(
 			" : ", JdkAttributes.IO_ADDRESS, //$NON-NLS-1$
 			JdkAttributes.IO_PORT);
 
 	private static final ItemHistogramBuilder HISTOGRAM = new ItemHistogramBuilder();
 	private static final ItemListBuilder LIST = new ItemListBuilder();
+	private static final DurationPercentileTableBuilder PERCENTILES = new DurationPercentileTableBuilder();
 
 	static {
 		HISTOGRAM.addCountColumn();
@@ -183,6 +194,11 @@ public class SocketIOPage extends AbstractDataPage {
 		LIST.addColumn(JfrAttributes.EVENT_THREAD);
 		LIST.addColumn(JdkAttributes.IO_SOCKET_READ_EOS);
 		LIST.addColumn(JdkAttributes.IO_TIMEOUT);
+
+		PERCENTILES.addSeries(PERCENTILE_READ_TIME, Messages.SocketIOPage_ROW_SOCKET_READ,
+				PERCENTILE_READ_COUNT, JdkAggregators.SOCKET_READ_COUNT.getName(), JdkTypeIDs.SOCKET_READ);
+		PERCENTILES.addSeries(PERCENTILE_WRITE_TIME, Messages.SocketIOPage_ROW_SOCKET_WRITE,
+				PERCENTILE_WRITE_COUNT, JdkAggregators.SOCKET_WRITE_COUNT.getName(), JdkTypeIDs.SOCKET_WRITE);
 	}
 
 	private enum HistogramType {
@@ -197,10 +213,12 @@ public class SocketIOPage extends AbstractDataPage {
 		private static final String LIST_ELEMENT = "eventList"; //$NON-NLS-1$
 		private static final String SOCKETIO_TABLE_ELEMENT = "socketTable"; //$NON-NLS-1$
 		private static final String SECONDARY_SOCKETIO_TABLE_ELEMENT = "secondarySocketTable"; //$NON-NLS-1$
+		private static final String PERCENTILE_TABLE_ELEMENT = "percentileTable"; //$NON-NLS-1$
 		private static final String HISTGRAM_TYPE = "histogramType"; //$NON-NLS-1$
 
 		private final ChartCanvas timelineCanvas;
 		private final ChartCanvas durationCanvas;
+		private final ChartCanvas sizeCanvas;
 		private final ItemList itemList;
 
 		private final SashForm sash;
@@ -218,8 +236,11 @@ public class SocketIOPage extends AbstractDataPage {
 		private IItemCollection selectionItems;
 		private XYChart timelineChart;
 		private XYChart durationChart;
+		private XYChart sizeChart;
 		private CTabFolder tabFolder;
 		private FlavorSelector flavorSelector;
+		private DurationPercentileTable percentileTable;
+		private Composite durationParent;
 
 		IOPageUi(Composite parent, FormToolkit toolkit, IPageContainer pageContainer, IState state) {
 			this.pageContainer = pageContainer;
@@ -254,18 +275,51 @@ public class SocketIOPage extends AbstractDataPage {
 			buildChart();
 
 			CTabItem t2 = new CTabItem(tabFolder, SWT.NONE);
+			durationParent = toolkit.createComposite(tabFolder);
+			durationParent.setLayout(new SimpleLayout());
 			t2.setToolTipText(Messages.IO_PAGE_DURATIONS_DESCRIPTION);
-			durationCanvas = new ChartCanvas(tabFolder);
-			t2.setText(Messages.PAGES_DURATIONS);
-			t2.setControl(durationCanvas);
+			durationCanvas = new ChartCanvas(durationParent);
+			durationCanvas.setLayoutData(new SimpleLayoutData(3.5f));
 			DataPageToolkit.createChartTooltip(durationCanvas);
 			DataPageToolkit.setChart(durationCanvas, durationChart, JfrAttributes.DURATION,
 					pageContainer::showSelection);
 			SelectionStoreActionToolkit.addSelectionStoreActions(pageContainer.getSelectionStore(), durationChart,
 					JfrAttributes.DURATION, Messages.SocketIOPage_DURATION_SELECTION, durationCanvas.getContextMenu());
 
+			percentileTable = PERCENTILES.build(durationParent,
+					TableSettings.forState(state.getChild(PERCENTILE_TABLE_ELEMENT)));
+			percentileTable.getManager().getViewer().getControl().setLayoutData(new SimpleLayoutData(6.5f));
+			MCContextMenuManager percentileTableMm = MCContextMenuManager
+					.create(percentileTable.getManager().getViewer().getControl());
+			ColumnMenusFactory.addDefaultMenus(percentileTable.getManager(), percentileTableMm);
+			SelectionStoreActionToolkit.addSelectionStoreActions(percentileTable.getManager().getViewer(),
+					pageContainer.getSelectionStore(), percentileTable::getSelectedItems,
+					Messages.SocketIOPage_PERCENTILE_SELECTION, percentileTableMm);
+			percentileTable.getManager().setSelectionState(percentileSelection);
+			t2.setText(Messages.PAGES_DURATIONS);
+			t2.setControl(durationParent);
+
+			IQuantity sizeMax = QuantitiesToolkit.maxPresent(socketItems.getAggregate(JdkAggregators.SOCKET_READ_LARGEST),
+					socketItems.getAggregate(JdkAggregators.SOCKET_WRITE_LARGEST));
+			// FIXME: Workaround to make max value included
+			sizeMax = sizeMax == null ? UnitLookup.BYTE.quantity(64): sizeMax.add(UnitLookup.BYTE.quantity(64));
+			sizeChart = new XYChart(UnitLookup.BYTE.quantity(0), sizeMax, RendererToolkit.empty(), 180);
+			sizeChart.setVisibleRange(sizeRange.getStart(), sizeMax);
+			sizeChart.addVisibleRangeListener(range -> sizeRange = range);
+
 			CTabItem t3 = new CTabItem(tabFolder, SWT.NONE);
-			t3.setToolTipText(Messages.IO_PAGE_EVENT_LOG_DESCRIPTION);
+			t3.setToolTipText(Messages.IO_PAGE_SIZE_DESCRIPTION);
+			sizeCanvas = new ChartCanvas(tabFolder);
+			t3.setText(Messages.PAGES_SIZE);
+			t3.setControl(sizeCanvas);
+			DataPageToolkit.createChartTooltip(sizeCanvas);
+			DataPageToolkit.setChart(sizeCanvas, sizeChart, JdkAttributes.IO_SIZE,
+					pageContainer::showSelection);
+			SelectionStoreActionToolkit.addSelectionStoreActions(pageContainer.getSelectionStore(), sizeChart,
+					JdkAttributes.IO_SIZE, Messages.SocketIOPage_SIZE_SELECTION, sizeCanvas.getContextMenu());
+
+			CTabItem t4 = new CTabItem(tabFolder, SWT.NONE);
+			t4.setToolTipText(Messages.IO_PAGE_EVENT_LOG_DESCRIPTION);
 			itemList = LIST.buildWithoutBorder(tabFolder, getTableSettings(state.getChild(LIST_ELEMENT)));
 			MCContextMenuManager itemListMm = MCContextMenuManager
 					.create(itemList.getManager().getViewer().getControl());
@@ -274,13 +328,13 @@ public class SocketIOPage extends AbstractDataPage {
 					Messages.SocketIOPage_LOG_SELECTION, itemListMm);
 			itemList.getManager().getViewer().addSelectionChangedListener(
 					e -> pageContainer.showSelection(ItemCollectionToolkit.build(itemList.getSelection().get())));
-			t3.setText(Messages.PAGES_EVENT_LOG);
+			t4.setText(Messages.PAGES_EVENT_LOG);
 			eventFilter = FilterComponent.createFilterComponent(itemList, itemListFilter,
 					getDataSource().getItems().apply(TABLE_ITEMS), pageContainer.getSelectionStore()::getSelections,
 					this::onEventFilterChange);
 			itemListMm.add(eventFilter.getShowFilterAction());
 			itemListMm.add(eventFilter.getShowSearchAction());
-			t3.setControl(eventFilter.getComponent());
+			t4.setControl(eventFilter.getComponent());
 			eventFilter.loadState(state.getChild(EVENT_FILTER));
 			onEventFilterChange(itemListFilter);
 			itemList.getManager().setSelectionState(itemListSelection);
@@ -415,6 +469,7 @@ public class SocketIOPage extends AbstractDataPage {
 				secondaryFilter.saveState(writableState.createChild(SECONDARY_FILTER));
 			}
 			itemList.getManager().getSettings().saveState(writableState.createChild(LIST_ELEMENT));
+			percentileTable.getManager().getSettings().saveState(writableState.createChild(PERCENTILE_TABLE_ELEMENT));
 			eventFilter.saveState(writableState.createChild(EVENT_FILTER));
 
 			saveToLocal();
@@ -428,6 +483,7 @@ public class SocketIOPage extends AbstractDataPage {
 			itemListSelection = itemList.getManager().getSelectionState();
 			tabFolderIndex = tabFolder.getSelectionIndex();
 			flavorSelectorState = flavorSelector.getFlavorSelectorState();
+			percentileSelection = percentileTable.getManager().getSelectionState();
 		}
 
 		private void onUseRange(Boolean show) {
@@ -451,7 +507,8 @@ public class SocketIOPage extends AbstractDataPage {
 
 		private void refreshPageItems() {
 			IItemCollection items = selectionItems != null ? selectionItems : getDataSource().getItems();
-			itemConsumerRoot.accept(items.apply(JdkFilters.SOCKET_READ_OR_WRITE));
+			IItemCollection filteredItems = items.apply(JdkFilters.SOCKET_READ_OR_WRITE);
+			itemConsumerRoot.accept(filteredItems);
 		}
 
 		private void updateChartAndListDetails(IItemCollection selectedItems) {
@@ -459,6 +516,7 @@ public class SocketIOPage extends AbstractDataPage {
 
 			List<IXDataRenderer> timelineRows = new ArrayList<>();
 			List<IXDataRenderer> durationRows = new ArrayList<>();
+			List<IXDataRenderer> sizeRows = new ArrayList<>();
 			IItemCollection readItems = selectedItems.apply(JdkFilters.SOCKET_READ);
 			if (readItems.hasItems()) {
 				timelineRows.add(DataPageToolkit.buildSizeRow(Messages.SocketIOPage_ROW_SOCKET_READ + hostCount,
@@ -468,6 +526,9 @@ public class SocketIOPage extends AbstractDataPage {
 						.add(DataPageToolkit.buildDurationHistogram(Messages.SocketIOPage_ROW_SOCKET_READ + hostCount,
 								JdkAggregators.SOCKET_READ_COUNT.getDescription(), readItems,
 								JdkAggregators.SOCKET_READ_COUNT, READ_COLOR));
+				sizeRows.add(DataPageToolkit.buildSizeHistogram(Messages.SocketIOPage_ROW_SOCKET_READ + hostCount,
+						JdkAggregators.SOCKET_READ_COUNT.getDescription(), readItems,
+						JdkAggregators.SOCKET_READ_COUNT, READ_COLOR, JdkAttributes.IO_SOCKET_BYTES_READ));
 			}
 			IItemCollection writeItems = selectedItems.apply(JdkFilters.SOCKET_WRITE);
 			if (writeItems.hasItems()) {
@@ -478,13 +539,18 @@ public class SocketIOPage extends AbstractDataPage {
 						.add(DataPageToolkit.buildDurationHistogram(Messages.SocketIOPage_ROW_SOCKET_WRITE + hostCount,
 								JdkAggregators.SOCKET_WRITE_COUNT.getDescription(), writeItems,
 								JdkAggregators.SOCKET_WRITE_COUNT, WRITE_COLOR));
+				sizeRows.add(DataPageToolkit.buildSizeHistogram(Messages.SocketIOPage_ROW_SOCKET_WRITE + hostCount,
+						JdkAggregators.SOCKET_WRITE_COUNT.getDescription(), writeItems,
+						JdkAggregators.SOCKET_WRITE_COUNT, WRITE_COLOR, JdkAttributes.IO_SOCKET_BYTES_WRITTEN));
 			}
 			if (timelineCanvas != null) {
 				timelineCanvas.replaceRenderer(RendererToolkit.uniformRows(timelineRows));
 				durationCanvas.replaceRenderer(RendererToolkit.uniformRows(durationRows));
+				sizeCanvas.replaceRenderer(RendererToolkit.uniformRows(sizeRows));
 
 				itemList.show(selectedItems);
 				pageContainer.showSelection(selectedItems);
+				percentileTable.update(selectedItems);
 			}
 		}
 
@@ -563,11 +629,13 @@ public class SocketIOPage extends AbstractDataPage {
 	private Map<HistogramType, SelectionState> primaryTableSelection;
 	private Map<HistogramType, SelectionState> secondaryTableSelection;
 	private SelectionState itemListSelection;
+	private SelectionState percentileSelection;
 	private Map<HistogramType, IItemFilter> primaryTableFilter;
 	private Map<HistogramType, IItemFilter> secondaryTableFilter;
 	private IItemFilter itemListFilter;
 	private IRange<IQuantity> timelineRange;
 	private IRange<IQuantity> durationRange;
+	private IRange<IQuantity> sizeRange;
 	private int tabFolderIndex = 0;
 	public FlavorSelectorState flavorSelectorState;
 
@@ -579,6 +647,7 @@ public class SocketIOPage extends AbstractDataPage {
 		secondaryTableFilter = new HashMap<>();
 		timelineRange = editor.getRecordingRange();
 		durationRange = editor.getRecordingRange();
+		sizeRange = DataPageToolkit.buildSizeRange(items.getItems(), true);
 	}
 
 	@Override

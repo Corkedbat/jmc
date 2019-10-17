@@ -78,7 +78,6 @@ import org.openjdk.jmc.flightrecorder.ui.IPageContainer;
 import org.openjdk.jmc.flightrecorder.ui.IPageDefinition;
 import org.openjdk.jmc.flightrecorder.ui.IPageUI;
 import org.openjdk.jmc.flightrecorder.ui.ItemCollectionToolkit;
-import org.openjdk.jmc.flightrecorder.ui.PageManager;
 import org.openjdk.jmc.flightrecorder.ui.RuleManager;
 import org.openjdk.jmc.flightrecorder.ui.StreamModel;
 import org.openjdk.jmc.flightrecorder.ui.common.AbstractDataPage;
@@ -90,8 +89,6 @@ import org.openjdk.jmc.flightrecorder.ui.common.ItemList;
 import org.openjdk.jmc.flightrecorder.ui.common.ItemList.ItemListBuilder;
 import org.openjdk.jmc.flightrecorder.ui.common.TypeFilterBuilder;
 import org.openjdk.jmc.flightrecorder.ui.messages.internal.Messages;
-import org.openjdk.jmc.flightrecorder.ui.pages.itemhandler.ItemHandlerPage;
-import org.openjdk.jmc.flightrecorder.ui.pages.itemhandler.ItemHandlerPage.ItemHandlerUiStandIn;
 import org.openjdk.jmc.flightrecorder.ui.selection.SelectionStoreActionToolkit;
 import org.openjdk.jmc.ui.OrientationAction;
 import org.openjdk.jmc.ui.column.ColumnManager.SelectionState;
@@ -185,7 +182,7 @@ public class EventBrowserPage extends AbstractDataPage {
 			toolkit.adapt(treeSash);
 			typeFilterTree = DataPageToolkit.buildEventTypeTree(treeSash, toolkit, this::onTypeChange, false);
 			MCContextMenuManager mm = typeFilterTree.getMenuManager();
-			IAction addPageAction = ActionToolkit.action(this::addPage,
+			IAction addPageAction = ActionToolkit.action(() -> DataPageToolkit.addPage(selectedTypes),
 					Messages.EventBrowserPage_NEW_PAGE_USING_TYPES_ACTION, NEW_PAGE_ICON);
 			mm.appendToGroup(MCContextMenuManager.GROUP_NEW, addPageAction);
 
@@ -228,11 +225,6 @@ public class EventBrowserPage extends AbstractDataPage {
 //				typeFilterTree.getViewer().getTree().setTopItem(typeFilterTree.getViewer().getTree().getItem(topIndex));
 //			}
 			list.getManager().setSelectionState(tableSelection);
-		}
-
-		private void addPage() {
-			PageManager pm = FlightRecorderUI.getDefault().getPageManager();
-			pm.makeRoot(pm.createPage(ItemHandlerPage.Factory.class, new ItemHandlerUiStandIn(selectedTypes)));
 		}
 
 		private void setTypesWithoutEvents(boolean checked) {
